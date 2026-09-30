@@ -18,21 +18,30 @@ Only `fan*_input` and `temp*_input` numeric fields are displayed. Available read
 
 ## Install
 
-The [v0.1.0 GitHub release](https://github.com/jeeftor/tnt/releases/tag/v0.1.0) contains a prebuilt, static Linux x86_64 executable. On TrueNAS, choose a data pool (not `boot-pool`) and use the [TrueNAS command line API client](https://www.truenas.com/docs/scale/api/) to create a `tnt` dataset. Replace `YOUR_POOL` with that pool's name and `YOUR_USER` with your SSH username:
+The [v0.1.0 GitHub release](https://github.com/jeeftor/tnt/releases/tag/v0.1.0) contains a prebuilt, static Linux x86_64 executable. You can place it in a subdirectory of an existing data-pool dataset if your account can write there and the mount permits execution. Replace `YOUR_POOL` and `EXISTING_DATASET` with the actual names:
+
+```sh
+findmnt -T /mnt/YOUR_POOL/EXISTING_DATASET -o TARGET,OPTIONS
+test -w /mnt/YOUR_POOL/EXISTING_DATASET && echo writable
+mkdir -p /mnt/YOUR_POOL/EXISTING_DATASET/tnt
+cd /mnt/YOUR_POOL/EXISTING_DATASET/tnt
+```
+
+The `findmnt` output must not include `noexec`, and the write check must print `writable`. Do not change Exec or permissions on an existing shared or application dataset solely for TNT. If no suitable dataset exists, create a dedicated one through the [TrueNAS command line API client](https://www.truenas.com/docs/scale/api/). Replace `YOUR_POOL` with a data pool name (not `boot-pool`) and `YOUR_USER` with your SSH username:
 
 ```sh
 zpool list -H -o name
 sudo midclt call pool.dataset.create '{"name":"YOUR_POOL/tnt","share_type":"GENERIC","exec":"ON"}'
 sudo midclt call -j filesystem.setperm '{"path":"/mnt/YOUR_POOL/tnt","user":"YOUR_USER","mode":"700"}'
 findmnt -T /mnt/YOUR_POOL/tnt -o TARGET,OPTIONS
+cd /mnt/YOUR_POOL/tnt
 ```
 
 Run the create command only if `YOUR_POOL/tnt` does not already exist. The dataset uses space as files are added; no quota or reservation is needed. `findmnt` should show the new dataset mount without `noexec`.
 
-Download and run TNT from that dataset:
+From either chosen directory, download and run TNT:
 
 ```sh
-cd /mnt/YOUR_POOL/tnt
 curl -fLO https://github.com/jeeftor/tnt/releases/download/v0.1.0/tnt-linux-amd64
 curl -fLO https://github.com/jeeftor/tnt/releases/download/v0.1.0/SHA256SUMS
 sha256sum -c SHA256SUMS
