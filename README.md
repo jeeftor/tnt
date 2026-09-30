@@ -53,16 +53,16 @@ Temperature colors use the hardware critical value when available, otherwise the
 
 - If `tnt` cannot start, check that the binary matches the host architecture and is on an executable filesystem.
 - If it reports that `sensors -j` cannot be started, run `sensors -j` on the same host and check that the command is in `PATH`.
-- If it shows zero sensors, inspect `sensors -j` for numeric `fan*_input` or `temp*_input` values. Other fields are ignored.
-- If a sample fails, the footer shows the collection or JSON error. The last successful readings remain visible, and the footer shows how old they are.
+- If it reports no usable readings, inspect `sensors -j` for numeric `fan*_input` or `temp*_input` values. Other fields are ignored.
+- If a sample fails or exceeds the ten-second command timeout, the footer shows the error. The last successful readings remain visible, and the footer shows how old they are.
 
-Some hosts report unreadable PWM control values on standard error while still producing usable JSON on standard output. `tnt` reads the JSON and never writes PWM settings.
+Some hosts report unreadable PWM control values on standard error while still producing usable JSON on standard output. `tnt` uses those readings even if the command exits unsuccessfully, and marks them as partial data in the footer. It never writes PWM settings.
 
 ## Coverage and limits
 
 The first version reads the temperatures and fan speeds exposed by `lm-sensors`. It groups `drivetemp` chips as Drives and `coretemp` chips or features named `CPU` as CPU; other temperatures appear under System. These names are display groups, not a hardware discovery guarantee. Drive names from `smartctl`, HBA temperatures from `storcli`, and custom thresholds in `temps.yaml` are not supported.
 
-Sampling uses an external `sensors -j` process. There is currently no timeout for that process, so a stuck command can stop updates until it exits. The monitor runs on Linux; a non-Linux build can display `--help` but cannot start the monitor.
+Sampling uses an external `sensors -j` process with a ten-second timeout. The monitor runs on Linux; a non-Linux build can display `--help` but cannot start the monitor.
 
 ## Development checks
 
@@ -73,5 +73,5 @@ cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps --document-private-items
 ```
 
-The unit tests cover sample JSON parsing and basic terminal rendering. They do not verify a live TrueNAS host or the bundled Linux executable.
+The unit tests cover sample JSON parsing, collector failures, and basic terminal rendering. They do not verify a live TrueNAS host or the bundled Linux executable.
 The documentation command generates browsable source API docs at `target/doc/tnt/index.html`. The private-items flag includes this small binary's internal functions and types.

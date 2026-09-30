@@ -4,8 +4,10 @@ mod sensors;
 
 use std::collections::VecDeque;
 use std::error::Error;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
@@ -18,6 +20,13 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Spa
 use sensors::{Group, Reading, parse_sensors};
 
 const HISTORY_LEN: usize = 120;
+const SENSOR_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Usable readings from one command, with any nonfatal exit warning.
+struct Sample {
+    readings: Vec<Reading>,
+    warning: Option<String>,
+}
 
 /// The latest reading and in-memory history for one sensor ID.
 struct SensorState {
@@ -127,28 +136,84 @@ impl App {
 /// Sample `sensors -j` on a worker thread and send readings or errors to the UI.
 ///
 /// This keeps command latency off the keyboard event loop. Each interval starts
-/// after the previous command finishes; the command currently has no timeout.
-fn start_collector(interval: Duration) -> Receiver<Result<Vec<Reading>, String>> {
+/// after the previous command finishes.
+fn start_collector(interval: Duration) -> Receiver<Result<Sample, String>> {
     let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         loop {
-            let result = Command::new("sensors")
-                .arg("-j")
-                .output()
-                .map_err(|err| format!("sensors -j: {err}"))
-                .and_then(|output| {
-                    parse_sensors(&output.stdout).map_err(|err| {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        format!("Cannot parse sensors -j: {err} {stderr}")
-                    })
-                });
+            let mut command = Command::new("sensors");
+            command.arg("-j");
+            let result = collect_once(&mut command, SENSOR_TIMEOUT);
             if sender.send(result).is_err() {
                 break;
             }
-            std::thread::sleep(interval);
+            thread::sleep(interval);
         }
     });
     receiver
+}
+
+/// Run one command with a deadline and interpret its sensor JSON.
+///
+/// Standard output and error are drained while the child runs so a full pipe
+/// cannot prevent it from exiting. A nonzero exit still yields usable readings,
+/// with a warning, because some hosts report unreadable PWM fields separately.
+fn collect_once(command: &mut Command, timeout: Duration) -> Result<Sample, String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("sensors -j: {err}"))?;
+    let mut stdout = child.stdout.take().ok_or("Cannot capture sensors output")?;
+    let mut stderr = child.stderr.take().ok_or("Cannot capture sensors errors")?;
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).map(|_| bytes)
+    });
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("sensors -j timed out after {}s", timeout.as_secs()));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(err) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("Cannot wait for sensors -j: {err}"));
+            }
+        }
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "Cannot read sensors output")?
+        .map_err(|err| format!("Cannot read sensors output: {err}"))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "Cannot read sensors errors")?
+        .map_err(|err| format!("Cannot read sensors errors: {err}"))?;
+    let stderr = String::from_utf8_lossy(&stderr);
+    let detail: String = stderr.trim().chars().take(160).collect();
+    let readings = parse_sensors(&stdout).map_err(|err| {
+        if detail.is_empty() {
+            format!("Cannot parse sensors -j: {err}")
+        } else {
+            format!("Cannot parse sensors -j: {err} ({detail})")
+        }
+    })?;
+    if readings.is_empty() {
+        return Err("sensors -j returned no temperature or fan readings".into());
+    }
+    let warning = (!status.success()).then(|| format!("Partial sensor data ({status})"));
+    Ok(Sample { readings, warning })
 }
 
 /// Parse command-line options, initialize the terminal, and run the monitor.
@@ -187,7 +252,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// Process sensor results and keys, redrawing when state changes or age advances.
 fn run(
     terminal: &mut DefaultTerminal,
-    receiver: Receiver<Result<Vec<Reading>, String>>,
+    receiver: Receiver<Result<Sample, String>>,
     interval: Duration,
 ) -> Result<(), Box<dyn Error>> {
     let mut app = App::new(interval);
@@ -196,7 +261,12 @@ fn run(
     loop {
         while let Ok(message) = receiver.try_recv() {
             match message {
-                Ok(readings) => app.update(readings),
+                Ok(sample) => {
+                    app.update(sample.readings);
+                    if let Some(warning) = sample.warning {
+                        app.status = warning;
+                    }
+                }
                 Err(error) => app.status = error,
             }
             dirty = true;
@@ -365,12 +435,48 @@ fn mini_history(history: &VecDeque<f64>, width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
     use std::time::Duration;
 
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    use super::{App, draw, sensors::parse_sensors};
+    use super::{App, collect_once, draw, sensors::parse_sensors};
+
+    #[test]
+    fn accepts_readings_when_sensors_reports_a_pwm_error() {
+        let mut command = Command::new("sh");
+        command.arg("-c").arg(
+            r#"printf '%s' '{"chip":{"CPU":{"temp1_input":42}}}'; printf 'pwm error' >&2; exit 1"#,
+        );
+
+        let sample = collect_once(&mut command, Duration::from_secs(2)).unwrap();
+        assert_eq!(sample.readings.len(), 1);
+        assert_eq!(sample.readings[0].value, 42.0);
+        assert!(sample.warning.unwrap().contains("Partial sensor data"));
+    }
+
+    #[test]
+    fn rejects_a_sample_without_usable_readings() {
+        let mut command = Command::new("sh");
+        command.arg("-c").arg("printf '{}'; exit 1");
+
+        let error = collect_once(&mut command, Duration::from_secs(2))
+            .err()
+            .unwrap();
+        assert!(error.contains("no temperature or fan readings"));
+    }
+
+    #[test]
+    fn stops_a_stalled_sensor_command() {
+        let mut command = Command::new("sleep");
+        command.arg("2");
+
+        let error = collect_once(&mut command, Duration::from_millis(100))
+            .err()
+            .unwrap();
+        assert!(error.contains("timed out"));
+    }
 
     #[test]
     fn renders_live_fan_and_temperature_rows() {
