@@ -18,7 +18,18 @@ Only `fan*_input` and `temp*_input` numeric fields are displayed. Available read
 
 ## Install
 
-The [v0.1.0 GitHub release](https://github.com/jeeftor/tnt/releases/tag/v0.1.0) contains a prebuilt, static Linux x86_64 executable. On TrueNAS, create a `tnt` dataset under your storage pool in the [Datasets UI](https://www.truenas.com/docs/scale/26/datasets/datasetsscreens/). Set its **Exec** property to **On** and grant your administrator account access. Replace `YOUR_POOL` below with your pool name:
+The [v0.1.0 GitHub release](https://github.com/jeeftor/tnt/releases/tag/v0.1.0) contains a prebuilt, static Linux x86_64 executable. On TrueNAS, choose a data pool (not `boot-pool`) and use the [TrueNAS command line API client](https://www.truenas.com/docs/scale/api/) to create a `tnt` dataset. Replace `YOUR_POOL` with that pool's name and `YOUR_USER` with your SSH username:
+
+```sh
+zpool list -H -o name
+sudo midclt call pool.dataset.create '{"name":"YOUR_POOL/tnt","share_type":"GENERIC","exec":"ON"}'
+sudo midclt call -j filesystem.setperm '{"path":"/mnt/YOUR_POOL/tnt","user":"YOUR_USER","mode":"700"}'
+findmnt -T /mnt/YOUR_POOL/tnt -o TARGET,OPTIONS
+```
+
+Run the create command only if `YOUR_POOL/tnt` does not already exist. The dataset uses space as files are added; no quota or reservation is needed. `findmnt` should show the new dataset mount without `noexec`.
+
+Download and run TNT from that dataset:
 
 ```sh
 cd /mnt/YOUR_POOL/tnt
@@ -29,7 +40,7 @@ chmod +x tnt-linux-amd64
 ./tnt-linux-amd64
 ```
 
-Do not install TNT in `/usr/bin`; TrueNAS manages its operating system files. The administrator home directory can be mounted `noexec`, which prevents running a binary there even after `chmod +x` or with `sudo`. Check a location with `findmnt -T /path/to/tnt-linux-amd64 -o TARGET,OPTIONS`. The `dist/` directory in this repository contains the same executable and checksum if you prefer to copy them to the dataset. On macOS, use `shasum -a 256 -c SHA256SUMS` to verify those files.
+Do not install TNT in `/usr/bin` or `/usr/local/bin`; TrueNAS manages its operating system files. The administrator home directory can be mounted `noexec`, which prevents running a binary there even after `chmod +x` or with `sudo`. Check a location with `findmnt -T /path/to/tnt-linux-amd64 -o TARGET,OPTIONS`. The `dist/` directory in this repository contains the same executable and checksum if you prefer to copy them to the dataset. On macOS, use `shasum -a 256 -c SHA256SUMS` to verify those files.
 
 To build instead, run this on a Linux host with Rust installed:
 
