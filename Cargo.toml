@@ -1,0 +1,9 @@
+[package]
+name = "tnt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.29"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+serde_json = "1"
