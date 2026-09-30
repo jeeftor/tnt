@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run tests
+        run: cargo test --locked
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux musl target
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+      - name: Build Linux executable
+        run: cargo build --locked --release --target x86_64-unknown-linux-musl
+      - name: Package and verify executable
+        run: |
+          mkdir -p release
+          install -m 0755 target/x86_64-unknown-linux-musl/release/tnt release/tnt-linux-amd64
+          cd release
+          sha256sum tnt-linux-amd64 > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          file tnt-linux-amd64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tnt-linux-amd64
+          path: release/
+          if-no-files-found: error

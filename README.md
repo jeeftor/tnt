@@ -75,3 +75,9 @@ cargo doc --no-deps --document-private-items
 
 The unit tests cover sample JSON parsing and basic terminal rendering. They do not verify a live TrueNAS host or the bundled Linux executable.
 The documentation command generates browsable source API docs at `target/doc/tnt/index.html`. The private-items flag includes this small binary's internal functions and types.
+
+## GitHub builds and releases
+
+The CI workflow runs formatting, tests, and Clippy on pull requests and pushes to `master`. After those checks pass, it builds a Linux x86_64 musl executable and uploads it with a checksum as a workflow artifact. This artifact is separate from the binary checked into `dist/`.
+
+To publish a version, update `Cargo.toml` and `Cargo.lock`, merge the verified change into `master`, then create and push a tag named `v` followed by the Cargo version (for example, `v0.1.0`). The release workflow verifies the version and checks, builds a fresh Linux executable from the tagged source, and attaches `tnt-linux-amd64` and `SHA256SUMS` to a GitHub release. A tag with a version that differs from `Cargo.toml` fails before publishing.
