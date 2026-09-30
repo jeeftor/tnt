@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check tag matches Cargo version
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "tnt") | .version')"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+      - name: Install Rust components and Linux musl target
+        run: |
+          rustup component add rustfmt clippy
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run tests
+        run: cargo test --locked
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build Linux executable
+        run: cargo build --locked --release --target x86_64-unknown-linux-musl
+      - name: Package and verify executable
+        run: |
+          mkdir -p release
+          install -m 0755 target/x86_64-unknown-linux-musl/release/tnt release/tnt-linux-amd64
+          cd release
+          sha256sum tnt-linux-amd64 > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          file tnt-linux-amd64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tnt-linux-amd64
+          path: release/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: tnt-linux-amd64
+          path: release/
+      - name: Verify release files
+        run: cd release && sha256sum --check SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/tnt-linux-amd64 release/SHA256SUMS --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
