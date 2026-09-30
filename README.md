@@ -18,14 +18,18 @@ Only `fan*_input` and `temp*_input` numeric fields are displayed. Available read
 
 ## Install
 
-The `dist/` directory contains a prebuilt, static Linux x86_64 executable. On the host where you downloaded the repository, verify the file from inside `dist/`:
+The [v0.1.0 GitHub release](https://github.com/jeeftor/tnt/releases/tag/v0.1.0) contains a prebuilt, static Linux x86_64 executable. On TrueNAS, create a `tnt` dataset under your storage pool in the [Datasets UI](https://www.truenas.com/docs/scale/26/datasets/datasetsscreens/). Set its **Exec** property to **On** and grant your administrator account access. Replace `YOUR_POOL` below with your pool name:
 
 ```sh
-cd dist
+cd /mnt/YOUR_POOL/tnt
+curl -fLO https://github.com/jeeftor/tnt/releases/download/v0.1.0/tnt-linux-amd64
+curl -fLO https://github.com/jeeftor/tnt/releases/download/v0.1.0/SHA256SUMS
 sha256sum -c SHA256SUMS
+chmod +x tnt-linux-amd64
+./tnt-linux-amd64
 ```
 
-On macOS, use `shasum -a 256 -c SHA256SUMS` instead. Copy `tnt-linux-amd64` to an executable filesystem on your TrueNAS host and name it `tnt`. You can also run the file directly from any executable location. A file on a `noexec` filesystem cannot be started directly.
+Do not install TNT in `/usr/bin`; TrueNAS manages its operating system files. The administrator home directory can be mounted `noexec`, which prevents running a binary there even after `chmod +x` or with `sudo`. Check a location with `findmnt -T /path/to/tnt-linux-amd64 -o TARGET,OPTIONS`. The `dist/` directory in this repository contains the same executable and checksum if you prefer to copy them to the dataset. On macOS, use `shasum -a 256 -c SHA256SUMS` to verify those files.
 
 To build instead, run this on a Linux host with Rust installed:
 
@@ -38,9 +42,9 @@ The resulting executable is `target/release/tnt`. Build on Linux x86_64 if you n
 ## Use
 
 ```sh
-tnt
-tnt --interval 2
-tnt --help
+./tnt-linux-amd64
+./tnt-linux-amd64 --interval 2
+./tnt-linux-amd64 --help
 ```
 
 The default sample interval is five seconds. `--interval` accepts whole seconds from 1 through 60. Use ↑/↓ or `j`/`k` to select a sensor and see its larger history chart. Press `q`, Esc, or Ctrl+C to quit.
@@ -51,7 +55,7 @@ Temperature colors use the hardware critical value when available, otherwise the
 
 ## Troubleshooting
 
-- If `tnt` cannot start, check that the binary matches the host architecture and is on an executable filesystem.
+- If TNT fails with `Permission denied`, check `findmnt -T /path/to/tnt-linux-amd64 -o TARGET,OPTIONS` for `noexec`. Run it from a pool dataset with Exec set to On. Also check that the binary has execute permission and matches the host architecture.
 - If it reports that `sensors -j` cannot be started, run `sensors -j` on the same host and check that the command is in `PATH`.
 - If it shows zero sensors, inspect `sensors -j` for numeric `fan*_input` or `temp*_input` values. Other fields are ignored.
 - If a sample fails, the footer shows the collection or JSON error. The last successful readings remain visible, and the footer shows how old they are.
