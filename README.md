@@ -1,70 +1,73 @@
+<p align="center">
+  <img src="assets/tnt-logo.svg" alt="TNT — TrueNAS Temps, a read-only terminal sensor monitor" width="720">
+</p>
+
 # TNT — TrueNAS Temps
 
-`tnt` is a read-only terminal monitor for temperatures and fan speeds on TrueNAS SCALE. It samples the JSON output of `sensors -j` and shows current values and recent history. It does not change fan speeds or sensor settings.
+Watch temperatures and fan speeds from a TrueNAS SCALE terminal. **TNT is read-only:** it samples `sensors -j`, shows the latest values and their history, and never changes fan settings.
 
-## Requirements
+## Quick start
 
-- A Linux x86_64 host for the bundled binary, or a Linux host with Rust to build from source.
-- `sensors` from `lm-sensors` available in `PATH`, with at least one temperature or fan reading in `sensors -j`.
-- An interactive terminal, such as an SSH session or the local console.
-
-Check the sensor source on the host before running `tnt`:
+You need a Linux x86_64 host, an interactive terminal (console or SSH), and `sensors` from `lm-sensors` in `PATH`. Confirm that your host reports readings:
 
 ```sh
 sensors -j
 ```
 
-Only `fan*_input` and `temp*_input` numeric fields are displayed. Available readings depend on what the host exposes through `lm-sensors`.
-
-## Install
-
-The `dist/` directory contains a prebuilt, static Linux x86_64 executable. On the host where you downloaded the repository, verify the file from inside `dist/`:
+Then, from a copy of this repository on the Linux host:
 
 ```sh
 cd dist
 sha256sum -c SHA256SUMS
+./tnt-linux-amd64
 ```
 
-On macOS, use `shasum -a 256 -c SHA256SUMS` instead. Copy `tnt-linux-amd64` to an executable filesystem on your TrueNAS host and name it `tnt`. You can also run the file directly from any executable location. A file on a `noexec` filesystem cannot be started directly.
+Use `./tnt-linux-amd64 --interval 2` to sample every two seconds. The default is five seconds; accepted intervals are whole seconds from 1 through 60. The bundled executable is a static Linux x86_64 binary. It must be on a filesystem that permits execution.
 
-To build instead, run this on a Linux host with Rust installed:
+If you verify the files on macOS before copying them to the NAS, use `shasum -a 256 -c SHA256SUMS` inside `dist/`. A macOS build cannot run the monitor; only `--help` works outside Linux.
+
+## Controls and display
+
+| Key | Action |
+| --- | --- |
+| ↑ / ↓ or `k` / `j` | Select a sensor and show its larger history chart |
+| `q`, Esc, or `Ctrl+C` | Quit |
+
+The list groups fan, CPU, system, and drive readings. Each row shows a current value and a small relative history chart. The larger chart uses the hardware limit when one is reported, or the observed peak with some headroom otherwise.
+
+TNT keeps up to 120 samples per sensor in memory. The displayed peak covers that sensor's full lifetime in the current run, even after older history samples drop off. If a sensor disappears and returns, its history and peak restart.
+
+Temperature readings turn yellow at 85% of their reported critical or maximum value, and red at that value. Without a reported limit, they remain green. Fan readings stay cyan.
+
+## Build from source
+
+On Linux with Rust installed:
 
 ```sh
 cargo build --release
+./target/release/tnt
 ```
 
-The resulting executable is `target/release/tnt`. Build on Linux x86_64 if you need the documented TrueNAS deployment architecture; a build on macOS produces a macOS executable.
+Build on Linux x86_64 for the documented TrueNAS deployment target. Building on macOS produces a macOS executable rather than the Linux binary in `dist/`.
 
-## Use
+## Sensor coverage
 
-```sh
-tnt
-tnt --interval 2
-tnt --help
-```
+TNT reads finite numeric `fan*_input` and `temp*_input` fields from `sensors -j`. What appears depends on the hardware and drivers available to `lm-sensors`. It places `drivetemp` chips under Drives and `coretemp` chips or features named `CPU` under CPU; other temperatures appear under System. These are display groups, not hardware identification.
 
-The default sample interval is five seconds. `--interval` accepts whole seconds from 1 through 60. Use ↑/↓ or `j`/`k` to select a sensor and see its larger history chart. Press `q`, Esc, or Ctrl+C to quit.
-
-Each sensor retains up to 120 samples in memory while it remains in the current sensor output. The displayed peak is the highest value seen for that sensor since it appeared; it is not limited to those 120 samples. History and peak values reset when the program restarts or a sensor disappears and later returns.
-
-Temperature colors use the hardware critical value when available, otherwise the hardware maximum. Yellow begins at 85% of that limit and red at the limit. Without a reported limit, temperatures stay green. Fan readings stay cyan. Graph scaling uses the reported limit when present, otherwise the observed peak.
+Drive names from `smartctl`, HBA temperatures from `storcli`, and custom thresholds in `temps.yaml` are outside the current version's scope. TNT does not read or write PWM controls.
 
 ## Troubleshooting
 
-- If `tnt` cannot start, check that the binary matches the host architecture and is on an executable filesystem.
-- If it reports that `sensors -j` cannot be started, run `sensors -j` on the same host and check that the command is in `PATH`.
-- If it shows zero sensors, inspect `sensors -j` for numeric `fan*_input` or `temp*_input` values. Other fields are ignored.
-- If a sample fails, the footer shows the collection or JSON error. The last successful readings remain visible, and the footer shows how old they are.
+| Symptom | Check |
+| --- | --- |
+| Binary will not start | Confirm the host is Linux x86_64 and the file is on an executable filesystem; a `noexec` mount cannot run it directly. |
+| `sensors -j` cannot start | Run `sensors -j` on the same host and check that it is in `PATH`. |
+| Zero sensors appear | Look for numeric `fan*_input` or `temp*_input` values in `sensors -j`; other fields are ignored. |
+| Readings stop updating | Check the footer for a collection or JSON error and the age of the last successful sample. A stuck `sensors -j` process currently has no timeout. |
 
-Some hosts report unreadable PWM control values on standard error while still producing usable JSON on standard output. `tnt` reads the JSON and never writes PWM settings.
+Some hosts print unreadable PWM errors to standard error while producing usable JSON on standard output. TNT uses the valid JSON and does not write PWM settings.
 
-## Coverage and limits
-
-The first version reads the temperatures and fan speeds exposed by `lm-sensors`. It groups `drivetemp` chips as Drives and `coretemp` chips or features named `CPU` as CPU; other temperatures appear under System. These names are display groups, not a hardware discovery guarantee. Drive names from `smartctl`, HBA temperatures from `storcli`, and custom thresholds in `temps.yaml` are not supported.
-
-Sampling uses an external `sensors -j` process. There is currently no timeout for that process, so a stuck command can stop updates until it exits. The monitor runs on Linux; a non-Linux build can display `--help` but cannot start the monitor.
-
-## Development checks
+## Development
 
 ```sh
 cargo fmt --check
@@ -73,5 +76,4 @@ cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps --document-private-items
 ```
 
-The unit tests cover sample JSON parsing and basic terminal rendering. They do not verify a live TrueNAS host or the bundled Linux executable.
-The documentation command generates browsable source API docs at `target/doc/tnt/index.html`. The private-items flag includes this small binary's internal functions and types.
+The documentation command writes browsable source docs to `target/doc/tnt/index.html`. The tests cover sample JSON parsing and basic terminal rendering; they do not establish live TrueNAS behavior or verify the bundled binary on a NAS.

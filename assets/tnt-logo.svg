@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180" role="img" aria-labelledby="title description">
+  <title id="title">TNT — TrueNAS Temps</title>
+  <desc id="description">A terminal window with a rising temperature trace beside the TNT wordmark.</desc>
+  <rect x="1" y="1" width="718" height="178" rx="24" fill="#0c1728" stroke="#263a50" stroke-width="2"/>
+  <rect x="28" y="28" width="124" height="124" rx="20" fill="#13283c" stroke="#34536a" stroke-width="2"/>
+  <circle cx="48" cy="49" r="4" fill="#ff896b"/>
+  <circle cx="62" cy="49" r="4" fill="#f5c66d"/>
+  <circle cx="76" cy="49" r="4" fill="#55d9bd"/>
+  <path d="M48 76l15 14-15 14" fill="none" stroke="#66e8df" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M74 119h15l10-16 11 7 14-24h10" fill="none" stroke="#66e8df" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="134" cy="86" r="7" fill="#ff896b"/>
+  <text x="184" y="70" fill="#8fa9bf" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="3">READ-ONLY SENSOR MONITOR</text>
+  <text x="179" y="134" fill="#f2f8fc" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="800" letter-spacing="5">TNT</text>
+  <rect x="358" y="93" width="2" height="43" rx="1" fill="#3e5a70"/>
+  <text x="382" y="122" fill="#66e8df" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="600">TrueNAS Temps</text>
+</svg>
